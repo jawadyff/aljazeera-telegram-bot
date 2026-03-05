@@ -122,7 +122,7 @@ export async function analyzeQuestion(question: string): Promise<string> {
     .join("\n");
 
   const message = await client.messages.create({
-    model: "claude-opus-4-6",
+    model: "claude-sonnet-4-6",
     max_tokens: 1000,
     system: systemPrompt,
     messages: [{ role: "user", content: question }],
@@ -148,7 +148,7 @@ export async function generateNewsSummary(): Promise<string> {
   const newsContext = msgs.map((m) => `[${m.date_cst}] ${m.text}`).join("\n\n---\n\n");
 
   const message = await client.messages.create({
-    model: "claude-opus-4-6",
+    model: "claude-sonnet-4-6",
     max_tokens: 1000,
     system:
       "You are a news digest assistant. Summarize the following Al Jazeera news posts into a concise briefing. Write naturally in Arabic like a journalist. Cover only the most important stories. No tables, no long headers. Under 1200 characters.",
