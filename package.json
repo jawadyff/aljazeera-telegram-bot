@@ -1,0 +1,26 @@
+{
+  "name": "aljazeera-telegram-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot that reads Al Jazeera news channel and answers group member questions using Claude Opus",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "better-sqlite3": "^12.6.2",
+    "dotenv": "^16.4.5",
+    "grammy": "^1.31.0",
+    "input": "^1.0.1",
+    "telegram": "^2.26.22"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
