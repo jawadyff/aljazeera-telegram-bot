@@ -75,17 +75,19 @@ async function extractKeyword(question: string): Promise<string[] | null> {
   const result = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 150,
-    system: `Extract the main search keyword (person name, place, or event) from the question to search a news database.
-If Arabic, also list common spelling variants (e.g. different hamza forms أ/إ/آ/ا, ة/ه, ي/ى, ق/ك, و/ؤ, doubled letters, missing diacritics, etc.).
-Respond with ONLY a JSON array of strings, most canonical form first. Example: ["قاسم سليماني","قآسم سليماني","قاسم سلیمانی"]
-If the question is general (e.g. "what's happening" or "latest news"), respond with: null
-No explanation, just the JSON array or null.`,
+    system: `You extract search keywords from news questions to query a database.
+If the question mentions ANY specific person, place, organization, or event — extract it and return spelling variants.
+For Arabic names, include common variants: أ/إ/آ/ا interchangeable, ة/ه interchangeable, ي/ى interchangeable, short vowels may be missing or added.
+Respond with ONLY a JSON array of strings (most canonical first). Example: ["إسماعيل قاني","اسماعيل قاني","إسماعيل قآني","اسماعيل قآني"]
+Only return null if the question has NO specific subject at all (e.g. "ما آخر الأخبار؟" or "what's happening").
+No explanation. Just the JSON array or null.`,
     messages: [{ role: "user", content: question }],
   });
 
   const block = result.content.find((b) => b.type === "text");
   if (!block || block.type !== "text") return null;
-  const raw = block.text.trim();
+  // Strip markdown code fences Haiku sometimes adds
+  const raw = block.text.trim().replace(/^```[a-z]*\n?/, "").replace(/\n?```$/, "").trim();
   if (raw === "null") return null;
 
   try {
