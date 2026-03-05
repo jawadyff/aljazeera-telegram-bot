@@ -113,7 +113,7 @@ export async function analyzeQuestion(question: string): Promise<string> {
   const systemPrompt = [
     "أنت محلل أخبار ذكاء اصطناعي متخصص في أخبار قناة الجزيرة الإنجليزية.",
     "CRITICAL RULE: You MUST always respond exclusively in Arabic (العربية). Never use English or any other language in your responses, no matter what language the user writes in.",
-    "Write like a knowledgeable journalist. Cover the most important developments with depth and context. Use headers and paragraphs naturally. Focus on what matters — don't list every minor detail.",
+    "Write like a knowledgeable friend texting you about the news — warm, direct, conversational Arabic. Use headers and flowing paragraphs. No bullet points or lists ever. Cover the most important developments with depth and context. Focus on what matters.",
     newsContext
       ? `\n${contextLabel}:\n\n${newsContext}`
       : "",
