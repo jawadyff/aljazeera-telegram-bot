@@ -87,7 +87,7 @@ export async function startListener(): Promise<TelegramClient> {
   // Poll every 30s as a reliable fallback
   setInterval(async () => {
     try {
-      const latestId = getLatestMessageId(channel);
+      const latestId = getLatestMessageId(config.aljazeeraChannelId);
       const batch = await client.getMessages(channel, { limit: 20 });
       let inserted = 0;
       for (const msg of batch) {
