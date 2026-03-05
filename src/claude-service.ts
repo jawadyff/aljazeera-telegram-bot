@@ -81,17 +81,21 @@ export async function analyzeQuestion(question: string): Promise<string> {
   // Cap context at ~3000 tokens (~12000 chars)
   const MAX_CONTEXT_CHARS = 12000;
 
-  function trimToTokenBudget(msgs: { date_cst: string; text: string }[]): string {
+  function trimToTokenBudget(msgs: { date_cst: string; text: string; date: number }[]): string {
     const lines: string[] = [];
     let total = 0;
-    // Take most recent first, then reverse for chronological order
     for (const m of [...msgs].reverse()) {
-      const line = `[${m.date_cst}] ${m.text}`;
+      // Compact timestamp: "Mar 05 02:41" instead of full date string
+      const ts = new Date(m.date * 1000).toLocaleString("en-US", {
+        timeZone: "America/Chicago", month: "short", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", hour12: false,
+      });
+      const line = `[${ts}] ${m.text}`;
       if (total + line.length > MAX_CONTEXT_CHARS) break;
       lines.unshift(line);
       total += line.length;
     }
-    return lines.join("\n\n---\n\n");
+    return lines.join("\n");
   }
 
   if (timeRange) {
@@ -145,7 +149,13 @@ export async function generateNewsSummary(): Promise<string> {
     return "لا توجد منشورات محفوظة بعد.";
   }
 
-  const newsContext = msgs.map((m) => `[${m.date_cst}] ${m.text}`).join("\n\n---\n\n");
+  const newsContext = msgs.map((m) => {
+    const ts = new Date(m.date * 1000).toLocaleString("en-US", {
+      timeZone: "America/Chicago", month: "short", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    });
+    return `[${ts}] ${m.text}`;
+  }).join("\n");
 
   const message = await client.messages.create({
     model: "claude-sonnet-4-6",
