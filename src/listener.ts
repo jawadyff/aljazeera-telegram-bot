@@ -1,10 +1,32 @@
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
 import { NewMessage, NewMessageEvent } from "telegram/events";
+import { Api } from "telegram";
 import input from "input";
 import { config } from "./config";
 import { addNewsContext } from "./claude-service";
 import { insertMessage } from "./db";
+
+async function backfillLastWeek(client: TelegramClient): Promise<void> {
+  const oneWeekAgo = Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60;
+  const channel = config.aljazeeraChannelId;
+  let savedCount = 0;
+
+  console.log("[Backfill] Fetching last week of AJENews posts…");
+
+  const messages = await client.getMessages(channel, {
+    limit: 500,
+  });
+
+  for (const msg of messages) {
+    if (!msg.text || msg.text.trim() === "") continue;
+    if ((msg.date as number) < oneWeekAgo) continue;
+    insertMessage(msg.id, channel, msg.text, msg.date as number);
+    savedCount++;
+  }
+
+  console.log(`[Backfill] Saved ${savedCount} posts from the last week.`);
+}
 
 export async function startListener(): Promise<TelegramClient> {
   const session = new StringSession(config.telegramSession);
@@ -23,12 +45,8 @@ export async function startListener(): Promise<TelegramClient> {
     onError: (err) => console.error("[MTProto] Auth error:", err),
   });
 
-  // On first run, print session string so user can save it to .env
-  if (!config.telegramSession) {
-    const sessionString = client.session.save() as unknown as string;
-    console.log("\n[MTProto] Save this to your .env as TELEGRAM_SESSION:");
-    console.log(`TELEGRAM_SESSION=${sessionString}\n`);
-  }
+  // Backfill last week's messages (INSERT OR IGNORE means safe to re-run)
+  await backfillLastWeek(client);
 
   client.addEventHandler(
     async (event: NewMessageEvent) => {
