@@ -1,8 +1,6 @@
 import { bot } from "./bot";
-import { initDb, getRecentMessages } from "./db";
-import { loadInitialContext } from "./claude-service";
+import { initDb } from "./db";
 import { startListener } from "./listener";
-import { config } from "./config";
 
 async function main() {
   console.log("Starting Al Jazeera News Bot…");
@@ -10,13 +8,7 @@ async function main() {
   // 1. Init SQLite
   initDb();
 
-  // 2. Hydrate in-memory context from DB
-  const recent = getRecentMessages(config.aljazeeraChannelId, 50);
-  if (recent.length > 0) {
-    loadInitialContext(recent.map((m) => m.text));
-  }
-
-  // 3. Start MTProto listener (handles interactive auth on first run)
+  // 2. Start MTProto listener (handles interactive auth on first run)
   await startListener();
 
   // 4. Start Grammy bot (long-poll loop)

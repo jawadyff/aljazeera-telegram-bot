@@ -1,9 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "./config";
+import { getRecentMessages, getMessagesByTimeRange } from "./db";
 
 const client = new Anthropic({ apiKey: config.claudeApiKey });
 
-// Rolling window of recent Al Jazeera channel posts used as context
+// Rolling window of recent posts (kept for live incoming messages)
 const recentNewsContext: string[] = [];
 const MAX_CONTEXT_POSTS = 50;
 
@@ -30,11 +31,67 @@ export function getNewsContext(): string {
 }
 
 /**
- * Analyze or answer a question using Claude Opus, optionally providing
- * recent Al Jazeera news posts as grounding context.
+ * Ask Claude to extract a time range from the question.
+ * Returns { fromUnix, toUnix } or null if no time range detected.
+ * Today's date is passed so Claude can resolve relative terms like "yesterday".
+ */
+async function extractTimeRange(
+  question: string
+): Promise<{ fromUnix: number; toUnix: number } | null> {
+  const nowUnix = Math.floor(Date.now() / 1000);
+  const nowCST = new Date().toLocaleString("en-US", { timeZone: "America/Chicago" });
+
+  const result = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 100,
+    system: `You extract time ranges from news questions. Current time (US Central): ${nowCST}. Current unix timestamp: ${nowUnix}.
+If the question asks about a specific time range, respond with ONLY a JSON object: {"from": <unix_timestamp>, "to": <unix_timestamp>}
+If no specific time range is mentioned, respond with ONLY: null
+Do not explain. Do not add any other text.`,
+    messages: [{ role: "user", content: question }],
+  });
+
+  const block = result.content.find((b) => b.type === "text");
+  if (!block || block.type !== "text") return null;
+
+  const raw = block.text.trim();
+  if (raw === "null") return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed.from === "number" && typeof parsed.to === "number") {
+      return { fromUnix: parsed.from, toUnix: parsed.to };
+    }
+  } catch {}
+  return null;
+}
+
+/**
+ * Analyze or answer a question using Claude Opus.
+ * Fetches DB messages relevant to the time range in the question (if any),
+ * otherwise falls back to the 50 most recent posts.
  */
 export async function analyzeQuestion(question: string): Promise<string> {
-  const newsContext = getNewsContext();
+  // Step 1: try to extract a time range from the question
+  const timeRange = await extractTimeRange(question);
+
+  let newsContext: string;
+  let contextLabel: string;
+
+  if (timeRange) {
+    const msgs = getMessagesByTimeRange(
+      config.aljazeeraChannelId,
+      timeRange.fromUnix,
+      timeRange.toUnix
+    );
+    newsContext = msgs.map((m) => `[${m.date_cst}] ${m.text}`).join("\n\n---\n\n");
+    contextLabel = `Al Jazeera posts from the requested time range (${msgs.length} posts)`;
+    console.log(`[Context] Time-range query: ${msgs.length} posts (${new Date(timeRange.fromUnix * 1000).toISOString()} → ${new Date(timeRange.toUnix * 1000).toISOString()})`);
+  } else {
+    const msgs = getRecentMessages(config.aljazeeraChannelId, 50);
+    newsContext = msgs.map((m) => `[${m.date_cst}] ${m.text}`).join("\n\n---\n\n");
+    contextLabel = `50 most recent Al Jazeera posts`;
+  }
 
   const systemPrompt = [
     "أنت محلل أخبار ذكاء اصطناعي متخصص في أخبار قناة الجزيرة الإنجليزية.",
@@ -43,7 +100,7 @@ export async function analyzeQuestion(question: string): Promise<string> {
     "When summarizing news, highlight key facts, geopolitical context, and different perspectives.",
     "Be concise but thorough — Telegram messages have a 4096-character limit, so structure your answer clearly.",
     newsContext
-      ? `\nRecent Al Jazeera posts for context:\n\n${newsContext}`
+      ? `\n${contextLabel}:\n\n${newsContext}`
       : "",
   ]
     .filter(Boolean)
@@ -65,13 +122,15 @@ export async function analyzeQuestion(question: string): Promise<string> {
 }
 
 /**
- * Generate a short digest/summary of recent channel posts on demand.
+ * Generate a digest of the most recent posts.
  */
 export async function generateNewsSummary(): Promise<string> {
-  const newsContext = getNewsContext();
-  if (!newsContext) {
-    return "لم يتم التقاط أي منشورات حديثة من قناة الجزيرة بعد. تأكد من إضافة البوت إلى القناة.";
+  const msgs = getRecentMessages(config.aljazeeraChannelId, 50);
+  if (msgs.length === 0) {
+    return "لا توجد منشورات محفوظة بعد.";
   }
+
+  const newsContext = msgs.map((m) => `[${m.date_cst}] ${m.text}`).join("\n\n---\n\n");
 
   const message = await client.messages.create({
     model: "claude-opus-4-5",

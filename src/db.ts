@@ -69,3 +69,18 @@ export function getRecentMessages(channel: string, limit = 50): DbMessage[] {
   `);
   return stmt.all(channel, limit) as DbMessage[];
 }
+
+export function getMessagesByTimeRange(
+  channel: string,
+  fromUnix: number,
+  toUnix: number,
+  limit = 200
+): DbMessage[] {
+  const stmt = db.prepare(`
+    SELECT * FROM messages
+    WHERE channel = ? AND date >= ? AND date <= ?
+    ORDER BY date ASC
+    LIMIT ?
+  `);
+  return stmt.all(channel, fromUnix, toUnix, limit) as DbMessage[];
+}
