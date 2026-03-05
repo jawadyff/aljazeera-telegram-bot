@@ -67,24 +67,37 @@ Do not explain. Do not add any other text.`,
 }
 
 /**
- * Extract a search keyword (person, place, event) from the question.
- * Returns the keyword string or null if none detected.
+ * Extract a search keyword and its spelling variants from the question.
+ * Returns array of variants (primary + alternates) or null if no keyword.
+ * Handles common Arabic spelling variations (hamza forms, taa marbuta, alef maqsura, etc.)
  */
-async function extractKeyword(question: string): Promise<string | null> {
+async function extractKeyword(question: string): Promise<string[] | null> {
   const result = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 50,
+    max_tokens: 150,
     system: `Extract the main search keyword (person name, place, or event) from the question to search a news database.
-Return ONLY the keyword in its original language (Arabic or English). No explanation.
-If the question is general (e.g. "what's happening" or "latest news"), return: null`,
+If Arabic, also list common spelling variants (e.g. different hamza forms أ/إ/آ/ا, ة/ه, ي/ى, ق/ك, و/ؤ, doubled letters, missing diacritics, etc.).
+Respond with ONLY a JSON array of strings, most canonical form first. Example: ["قاسم سليماني","قآسم سليماني","قاسم سلیمانی"]
+If the question is general (e.g. "what's happening" or "latest news"), respond with: null
+No explanation, just the JSON array or null.`,
     messages: [{ role: "user", content: question }],
   });
 
   const block = result.content.find((b) => b.type === "text");
   if (!block || block.type !== "text") return null;
   const raw = block.text.trim();
-  if (raw === "null" || raw.length === 0 || raw.length > 60) return null;
-  return raw;
+  if (raw === "null") return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const variants = parsed.filter((v) => typeof v === "string" && v.length > 0 && v.length <= 80);
+      return variants.length > 0 ? variants : null;
+    }
+  } catch {}
+  // fallback: treat whole response as single keyword if short enough
+  if (raw.length > 0 && raw.length <= 60) return [raw];
+  return null;
 }
 
 /**
@@ -96,6 +109,7 @@ If the question is general (e.g. "what's happening" or "latest news"), return: n
 export async function analyzeQuestion(question: string): Promise<string> {
   // Step 1: try to extract a time range from the question
   const timeRange = await extractTimeRange(question);
+  console.log(`[Context] Time range extracted: ${JSON.stringify(timeRange)}`);
 
   let newsContext: string;
   let contextLabel: string;
@@ -130,19 +144,32 @@ export async function analyzeQuestion(question: string): Promise<string> {
     contextLabel = `Al Jazeera posts from the requested time range`;
     console.log(`[Context] Time-range: ${msgs.length} posts fetched, ${newsContext.length} chars sent`);
   } else {
-    const keyword = await extractKeyword(question);
-    if (keyword) {
-      const msgs = searchMessages(config.aljazeeraChannelId, keyword);
-      if (msgs.length > 0) {
-        newsContext = trimToTokenBudget(msgs);
-        contextLabel = `Al Jazeera posts mentioning "${keyword}"`;
-        console.log(`[Context] Keyword "${keyword}": ${msgs.length} posts fetched, ${newsContext.length} chars sent`);
+    const variants = await extractKeyword(question);
+    console.log(`[Context] Keyword variants extracted: ${JSON.stringify(variants)}`);
+    if (variants) {
+      // Search all spelling variants, deduplicate by message_id, sort by date
+      const seen = new Set<number>();
+      const combined: { date_cst: string; text: string; date: number; id: number; message_id: number; channel: string; created_at: number }[] = [];
+      for (const v of variants) {
+        for (const m of searchMessages(config.aljazeeraChannelId, v)) {
+          if (!seen.has(m.message_id)) {
+            seen.add(m.message_id);
+            combined.push(m);
+          }
+        }
+      }
+      combined.sort((a, b) => a.date - b.date);
+
+      if (combined.length > 0) {
+        newsContext = trimToTokenBudget(combined);
+        contextLabel = `Al Jazeera posts mentioning "${variants[0]}"`;
+        console.log(`[Context] Keyword variants ${JSON.stringify(variants)}: ${combined.length} posts fetched, ${newsContext.length} chars sent`);
       } else {
         // keyword found but no results — fall back to recent
         const recent = getRecentMessages(config.aljazeeraChannelId, 50);
         newsContext = trimToTokenBudget(recent);
-        contextLabel = `Most recent Al Jazeera posts (no results for "${keyword}")`;
-        console.log(`[Context] Keyword "${keyword}" had no results, using recent ${recent.length} posts`);
+        contextLabel = `Most recent Al Jazeera posts (no results for "${variants[0]}")`;
+        console.log(`[Context] Keyword variants ${JSON.stringify(variants)} had no results, using recent ${recent.length} posts`);
       }
     } else {
       const msgs = getRecentMessages(config.aljazeeraChannelId, 50);
@@ -164,8 +191,8 @@ export async function analyzeQuestion(question: string): Promise<string> {
     .join("\n");
 
   const message = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 4096,
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 2048,
     system: systemPrompt,
     messages: [{ role: "user", content: question }],
   });
@@ -196,7 +223,7 @@ export async function generateNewsSummary(): Promise<string> {
   }).join("\n");
 
   const message = await client.messages.create({
-    model: "claude-sonnet-4-6",
+    model: "claude-haiku-4-5-20251001",
     max_tokens: 1000,
     system:
       "You are a news digest assistant. Summarize the following Al Jazeera news posts into a concise briefing. Write naturally in Arabic like a journalist. Cover only the most important stories. No tables, no long headers. Under 1200 characters.",
