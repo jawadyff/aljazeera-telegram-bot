@@ -11,18 +11,28 @@ async function backfillLastWeek(client: TelegramClient): Promise<void> {
   const oneWeekAgo = Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60;
   const channel = config.aljazeeraChannelId;
   let savedCount = 0;
+  let offsetId = 0;
 
   console.log("[Backfill] Fetching last week of AJENews posts…");
 
-  const messages = await client.getMessages(channel, {
-    limit: 500,
-  });
+  while (true) {
+    const batch = await client.getMessages(channel, {
+      limit: 100,
+      offsetId,
+    });
 
-  for (const msg of messages) {
-    if (!msg.text || msg.text.trim() === "") continue;
-    if ((msg.date as number) < oneWeekAgo) continue;
-    insertMessage(msg.id, channel, msg.text, msg.date as number);
-    savedCount++;
+    if (batch.length === 0) break;
+
+    let reachedEnd = false;
+    for (const msg of batch) {
+      if ((msg.date as number) < oneWeekAgo) { reachedEnd = true; break; }
+      if (!msg.text || msg.text.trim() === "") continue;
+      insertMessage(msg.id, channel, msg.text, msg.date as number);
+      savedCount++;
+    }
+
+    if (reachedEnd) break;
+    offsetId = batch[batch.length - 1].id;
   }
 
   console.log(`[Backfill] Saved ${savedCount} posts from the last week.`);

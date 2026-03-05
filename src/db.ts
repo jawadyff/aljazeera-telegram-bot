@@ -18,6 +18,7 @@ export function initDb(): void {
       channel    TEXT    NOT NULL,
       text       TEXT    NOT NULL,
       date       INTEGER NOT NULL,
+      date_cst   TEXT    NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_channel_message
@@ -35,6 +36,15 @@ export interface DbMessage {
   created_at: number;
 }
 
+function toCST(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleString("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  });
+}
+
 export function insertMessage(
   messageId: number,
   channel: string,
@@ -42,10 +52,10 @@ export function insertMessage(
   date: number
 ): void {
   const stmt = db.prepare(`
-    INSERT OR IGNORE INTO messages (message_id, channel, text, date)
-    VALUES (?, ?, ?, ?)
+    INSERT OR IGNORE INTO messages (message_id, channel, text, date, date_cst)
+    VALUES (?, ?, ?, ?, ?)
   `);
-  stmt.run(messageId, channel, text, date);
+  stmt.run(messageId, channel, text, date, toCST(date));
 }
 
 export function getRecentMessages(channel: string, limit = 50): DbMessage[] {
