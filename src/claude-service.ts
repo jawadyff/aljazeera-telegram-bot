@@ -78,26 +78,41 @@ export async function analyzeQuestion(question: string): Promise<string> {
   let newsContext: string;
   let contextLabel: string;
 
+  // Cap context at ~5000 tokens (≈100 posts × 50 tokens each)
+  const MAX_CONTEXT_CHARS = 20000;
+
+  function trimToTokenBudget(msgs: { date_cst: string; text: string }[]): string {
+    const lines: string[] = [];
+    let total = 0;
+    // Take most recent first, then reverse for chronological order
+    for (const m of [...msgs].reverse()) {
+      const line = `[${m.date_cst}] ${m.text}`;
+      if (total + line.length > MAX_CONTEXT_CHARS) break;
+      lines.unshift(line);
+      total += line.length;
+    }
+    return lines.join("\n\n---\n\n");
+  }
+
   if (timeRange) {
     const msgs = getMessagesByTimeRange(
       config.aljazeeraChannelId,
       timeRange.fromUnix,
       timeRange.toUnix
     );
-    newsContext = msgs.map((m) => `[${m.date_cst}] ${m.text}`).join("\n\n---\n\n");
-    contextLabel = `Al Jazeera posts from the requested time range (${msgs.length} posts)`;
-    console.log(`[Context] Time-range query: ${msgs.length} posts (${new Date(timeRange.fromUnix * 1000).toISOString()} → ${new Date(timeRange.toUnix * 1000).toISOString()})`);
+    newsContext = trimToTokenBudget(msgs);
+    contextLabel = `Al Jazeera posts from the requested time range`;
+    console.log(`[Context] Time-range: ${msgs.length} posts fetched, ${newsContext.length} chars sent`);
   } else {
     const msgs = getRecentMessages(config.aljazeeraChannelId, 50);
     newsContext = msgs.map((m) => `[${m.date_cst}] ${m.text}`).join("\n\n---\n\n");
-    contextLabel = `50 most recent Al Jazeera posts`;
+    contextLabel = `Most recent Al Jazeera posts`;
   }
 
   const systemPrompt = [
     "أنت محلل أخبار ذكاء اصطناعي متخصص في أخبار قناة الجزيرة الإنجليزية.",
     "CRITICAL RULE: You MUST always respond exclusively in Arabic (العربية). Never use English or any other language in your responses, no matter what language the user writes in.",
-    "Be concise. Give ONE short response with only the most important and significant information. Maximum 800 characters. Do NOT include every detail — prioritize what matters most.",
-    "Use short bullet points. No tables. No long headers. No repetition.",
+    "Write naturally and clearly like a knowledgeable journalist. Cover the most important developments only — do not list every detail. Use short paragraphs or brief bullet points. Avoid headers and tables. Keep the response under 1500 characters total.",
     newsContext
       ? `\n${contextLabel}:\n\n${newsContext}`
       : "",
@@ -106,8 +121,8 @@ export async function analyzeQuestion(question: string): Promise<string> {
     .join("\n");
 
   const message = await client.messages.create({
-    model: "claude-opus-4-5",
-    max_tokens: 600,
+    model: "claude-opus-4-6",
+    max_tokens: 1000,
     system: systemPrompt,
     messages: [{ role: "user", content: question }],
   });
@@ -132,10 +147,10 @@ export async function generateNewsSummary(): Promise<string> {
   const newsContext = msgs.map((m) => `[${m.date_cst}] ${m.text}`).join("\n\n---\n\n");
 
   const message = await client.messages.create({
-    model: "claude-opus-4-5",
-    max_tokens: 1500,
+    model: "claude-opus-4-6",
+    max_tokens: 1000,
     system:
-      "You are a news digest assistant. Summarize the following Al Jazeera news posts into a concise, structured briefing with bullet points. Group related stories. Keep it under 1200 characters. IMPORTANT: Always respond in Arabic.",
+      "You are a news digest assistant. Summarize the following Al Jazeera news posts into a concise briefing. Write naturally in Arabic like a journalist. Cover only the most important stories. No tables, no long headers. Under 1200 characters.",
     messages: [
       {
         role: "user",

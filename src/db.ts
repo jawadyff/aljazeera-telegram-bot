@@ -74,7 +74,7 @@ export function getMessagesByTimeRange(
   channel: string,
   fromUnix: number,
   toUnix: number,
-  limit = 200
+  limit = 500
 ): DbMessage[] {
   const stmt = db.prepare(`
     SELECT * FROM messages
