@@ -78,8 +78,8 @@ export async function analyzeQuestion(question: string): Promise<string> {
   let newsContext: string;
   let contextLabel: string;
 
-  // Cap context at ~5000 tokens (≈100 posts × 50 tokens each)
-  const MAX_CONTEXT_CHARS = 20000;
+  // Cap context at ~3000 tokens (~12000 chars)
+  const MAX_CONTEXT_CHARS = 12000;
 
   function trimToTokenBudget(msgs: { date_cst: string; text: string }[]): string {
     const lines: string[] = [];
@@ -105,14 +105,15 @@ export async function analyzeQuestion(question: string): Promise<string> {
     console.log(`[Context] Time-range: ${msgs.length} posts fetched, ${newsContext.length} chars sent`);
   } else {
     const msgs = getRecentMessages(config.aljazeeraChannelId, 50);
-    newsContext = msgs.map((m) => `[${m.date_cst}] ${m.text}`).join("\n\n---\n\n");
+    newsContext = trimToTokenBudget(msgs);
     contextLabel = `Most recent Al Jazeera posts`;
+    console.log(`[Context] Recent: ${msgs.length} posts fetched, ${newsContext.length} chars sent`);
   }
 
   const systemPrompt = [
     "أنت محلل أخبار ذكاء اصطناعي متخصص في أخبار قناة الجزيرة الإنجليزية.",
     "CRITICAL RULE: You MUST always respond exclusively in Arabic (العربية). Never use English or any other language in your responses, no matter what language the user writes in.",
-    "Write naturally and clearly like a knowledgeable journalist. Cover the most important developments only — do not list every detail. Use short paragraphs or brief bullet points. Avoid headers and tables. Keep the response under 1500 characters total.",
+    "Write like a knowledgeable journalist. Cover the most important developments with depth and context. Use headers and paragraphs naturally. Focus on what matters — don't list every minor detail.",
     newsContext
       ? `\n${contextLabel}:\n\n${newsContext}`
       : "",
