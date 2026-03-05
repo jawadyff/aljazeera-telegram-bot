@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "./config";
-import { getRecentMessages, getMessagesByTimeRange } from "./db";
+import { getRecentMessages, getMessagesByTimeRange, searchMessages } from "./db";
 
 const client = new Anthropic({ apiKey: config.claudeApiKey });
 
@@ -67,9 +67,31 @@ Do not explain. Do not add any other text.`,
 }
 
 /**
- * Analyze or answer a question using Claude Opus.
- * Fetches DB messages relevant to the time range in the question (if any),
- * otherwise falls back to the 50 most recent posts.
+ * Extract a search keyword (person, place, event) from the question.
+ * Returns the keyword string or null if none detected.
+ */
+async function extractKeyword(question: string): Promise<string | null> {
+  const result = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 50,
+    system: `Extract the main search keyword (person name, place, or event) from the question to search a news database.
+Return ONLY the keyword in its original language (Arabic or English). No explanation.
+If the question is general (e.g. "what's happening" or "latest news"), return: null`,
+    messages: [{ role: "user", content: question }],
+  });
+
+  const block = result.content.find((b) => b.type === "text");
+  if (!block || block.type !== "text") return null;
+  const raw = block.text.trim();
+  if (raw === "null" || raw.length === 0 || raw.length > 60) return null;
+  return raw;
+}
+
+/**
+ * Analyze or answer a question using Claude Sonnet.
+ * 1. Try time range → query by date
+ * 2. Try keyword → search DB
+ * 3. Fallback → 50 most recent posts
  */
 export async function analyzeQuestion(question: string): Promise<string> {
   // Step 1: try to extract a time range from the question
@@ -108,10 +130,26 @@ export async function analyzeQuestion(question: string): Promise<string> {
     contextLabel = `Al Jazeera posts from the requested time range`;
     console.log(`[Context] Time-range: ${msgs.length} posts fetched, ${newsContext.length} chars sent`);
   } else {
-    const msgs = getRecentMessages(config.aljazeeraChannelId, 50);
-    newsContext = trimToTokenBudget(msgs);
-    contextLabel = `Most recent Al Jazeera posts`;
-    console.log(`[Context] Recent: ${msgs.length} posts fetched, ${newsContext.length} chars sent`);
+    const keyword = await extractKeyword(question);
+    if (keyword) {
+      const msgs = searchMessages(config.aljazeeraChannelId, keyword);
+      if (msgs.length > 0) {
+        newsContext = trimToTokenBudget(msgs);
+        contextLabel = `Al Jazeera posts mentioning "${keyword}"`;
+        console.log(`[Context] Keyword "${keyword}": ${msgs.length} posts fetched, ${newsContext.length} chars sent`);
+      } else {
+        // keyword found but no results — fall back to recent
+        const recent = getRecentMessages(config.aljazeeraChannelId, 50);
+        newsContext = trimToTokenBudget(recent);
+        contextLabel = `Most recent Al Jazeera posts (no results for "${keyword}")`;
+        console.log(`[Context] Keyword "${keyword}" had no results, using recent ${recent.length} posts`);
+      }
+    } else {
+      const msgs = getRecentMessages(config.aljazeeraChannelId, 50);
+      newsContext = trimToTokenBudget(msgs);
+      contextLabel = `Most recent Al Jazeera posts`;
+      console.log(`[Context] Recent: ${msgs.length} posts fetched, ${newsContext.length} chars sent`);
+    }
   }
 
   const systemPrompt = [

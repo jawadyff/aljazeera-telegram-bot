@@ -78,6 +78,20 @@ export function getLatestMessageId(channel: string): number {
   return row?.message_id ?? 0;
 }
 
+export function searchMessages(
+  channel: string,
+  keyword: string,
+  limit = 100
+): DbMessage[] {
+  const stmt = db.prepare(`
+    SELECT * FROM messages
+    WHERE channel = ? AND text LIKE ?
+    ORDER BY date DESC
+    LIMIT ?
+  `);
+  return stmt.all(channel, `%${keyword}%`, limit) as DbMessage[];
+}
+
 export function getMessagesByTimeRange(
   channel: string,
   fromUnix: number,
