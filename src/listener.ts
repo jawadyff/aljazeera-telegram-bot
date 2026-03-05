@@ -88,12 +88,12 @@ export async function startListener(): Promise<TelegramClient> {
   setInterval(async () => {
     try {
       const latestId = getLatestMessageId(config.aljazeeraChannelId);
-      const batch = await client.getMessages(channel, { limit: 20 });
+      const batch = await client.getMessages(config.aljazeeraChannelId, { limit: 20 });
       let inserted = 0;
       for (const msg of batch) {
         if (msg.id <= latestId) break;
         if (!msg.text?.trim()) continue;
-        insertMessage(msg.id, channel, msg.text, msg.date as number);
+        insertMessage(msg.id, config.aljazeeraChannelId, msg.text, msg.date as number);
         addNewsContext(msg.text);
         inserted++;
         console.log(`[Poll] New post #${msg.id}: ${msg.text.slice(0, 80)}…`);

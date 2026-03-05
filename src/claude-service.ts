@@ -113,7 +113,7 @@ export async function analyzeQuestion(question: string): Promise<string> {
   const systemPrompt = [
     "أنت محلل أخبار ذكاء اصطناعي متخصص في أخبار قناة الجزيرة الإنجليزية.",
     "CRITICAL RULE: You MUST always respond exclusively in Arabic (العربية). Never use English or any other language in your responses, no matter what language the user writes in.",
-    "Write like a knowledgeable friend texting you about the news — warm, direct, conversational Arabic. Use headers and flowing paragraphs. No bullet points or lists ever. Cover the most important developments with depth and context. Focus on what matters. CRITICAL: Your entire response must fit in one Telegram message — stay under 3800 characters total. End with a complete sentence, never mid-thought.",
+    "Write like a knowledgeable friend texting you about the news — warm, direct, conversational Arabic. Use headers and flowing paragraphs. No bullet points or lists ever. Cover the most important developments with depth and context. Focus on what matters.",
     newsContext
       ? `\n${contextLabel}:\n\n${newsContext}`
       : "",
@@ -123,7 +123,7 @@ export async function analyzeQuestion(question: string): Promise<string> {
 
   const message = await client.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 1500,
+    max_tokens: 4096,
     system: systemPrompt,
     messages: [{ role: "user", content: question }],
   });
