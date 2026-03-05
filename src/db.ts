@@ -70,6 +70,14 @@ export function getRecentMessages(channel: string, limit = 50): DbMessage[] {
   return stmt.all(channel, limit) as DbMessage[];
 }
 
+export function getLatestMessageId(channel: string): number {
+  const stmt = db.prepare(`
+    SELECT message_id FROM messages WHERE channel = ? ORDER BY message_id DESC LIMIT 1
+  `);
+  const row = stmt.get(channel) as { message_id: number } | undefined;
+  return row?.message_id ?? 0;
+}
+
 export function getMessagesByTimeRange(
   channel: string,
   fromUnix: number,
