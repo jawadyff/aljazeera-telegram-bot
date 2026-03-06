@@ -45,22 +45,23 @@ async function extractTimeRange(
     model: "claude-haiku-4-5-20251001",
     max_tokens: 100,
     system: `You extract time ranges from news questions. Current time (US Central): ${nowCST}. Current unix timestamp: ${nowUnix}.
-If the question asks about a specific time range, respond with ONLY a JSON object: {"from": <unix_timestamp>, "to": <unix_timestamp>}
-If no specific time range is mentioned, respond with ONLY: null
-Do not explain. Do not add any other text.`,
+If the question mentions a specific time window (e.g. "last hour", "last 3 hours", "الساعة الأخيرة", "الأربع ساعات الأخيرة"), respond with ONLY this exact format: {"from": <unix>, "to": <unix>}
+If NO time window is mentioned, respond with ONLY the word: null
+No markdown. No code fences. No explanation.`,
     messages: [{ role: "user", content: question }],
   });
 
   const block = result.content.find((b) => b.type === "text");
   if (!block || block.type !== "text") return null;
 
-  const raw = block.text.trim();
-  if (raw === "null") return null;
+  let raw = block.text.trim().replace(/^```[a-z]*\n?/, "").replace(/\n?```$/, "").trim();
 
   try {
     const parsed = JSON.parse(raw);
-    if (typeof parsed.from === "number" && typeof parsed.to === "number") {
-      return { fromUnix: parsed.from, toUnix: parsed.to };
+    const from = parsed.from ?? parsed.fromUnix;
+    const to = parsed.to ?? parsed.toUnix;
+    if (typeof from === "number" && typeof to === "number") {
+      return { fromUnix: from, toUnix: to };
     }
   } catch {}
   return null;
@@ -182,9 +183,13 @@ export async function analyzeQuestion(question: string): Promise<string> {
   }
 
   const systemPrompt = [
-    "أنت محلل أخبار ذكاء اصطناعي متخصص في أخبار قناة الجزيرة الإنجليزية.",
-    "CRITICAL RULE: You MUST always respond exclusively in Arabic (العربية). Never use English or any other language in your responses, no matter what language the user writes in.",
-    "Write like a knowledgeable friend texting you about the news — warm, direct, conversational Arabic. Use headers and flowing paragraphs. No bullet points or lists ever. Cover the most important developments with depth and context. Focus on what matters.",
+    "أنت محلل أخبار متخصص في شؤون الشرق الأوسط. أجب دائماً باللغة العربية حصراً.",
+    `قواعد الأسلوب — التزم بها حرفياً:
+1. لا تبدأ الرد أبداً بعبارة تعجبية أو وصف عاطفي. الجملة الأولى يجب أن تكون معلومة أو موقف، لا وصفاً للجو العام.
+2. ممنوع: 'يا صاحبي'، 'الأوضاع وصلت لمستويات'، 'اشتعال شامل'، أي مقدمة درامية من هذا القبيل.
+3. ترتيب المحتوى: ابدأ بالتصريحات الدبلوماسية والمواقف السياسية والأرقام والإحصاءات — ثم الغارات والقصف في المنتصف أو الأسفل فقط. الغارات والصواريخ أحداث يومية معتادة في هذا الصراع، لا تستحق الصدارة.
+4. لا قوائم ولا نقاط. فقرات متدفقة فقط مع عناوين.
+5. اختم بفقرة بعنوان 'التوقعات' فيها تحليلك الخاص لمسار الأحداث.`,
     newsContext
       ? `\n${contextLabel}:\n\n${newsContext}`
       : "",
